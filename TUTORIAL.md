@@ -14,3 +14,5 @@ Build it from the project root with `mamba`:
 mamba env create -f tools/cfdna.yml
 mamba activate cfdna
 ```
+
+## 3. Fragmentomics analysis
