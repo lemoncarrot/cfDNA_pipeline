@@ -1,7 +1,16 @@
 # cfDNA pipeline overview
 
+
+
 ## 1. Processing initial BAMs
 
 ## 2. Methylation analysis
 
-Build env from cfdna_methylation_env.yml
+### Setting up the environment
+
+Build it from the project root with `mamba`:
+
+```bash
+mamba env create -f tools/cfdna.yml
+mamba activate cfdna
+```
