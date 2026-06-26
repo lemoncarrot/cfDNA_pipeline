@@ -1,5 +1,9 @@
 A00_Sample/*
-refs/*
+refs/gencode*
+refs/promoter*
 metadata/*
 OLD/*
 A01_Sample/*
+
+**/*.log
+**/*.outsrc/preprocessing/run_nf1.sh
