@@ -1,0 +1,33 @@
+name: cfdna
+# Top-level spec only: let conda resolve the transitive closure so the env
+# solves across machines/OSes. (The old file was a full `conda env export`
+# with exact build hashes, which only solved on the original host.)
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - pip
+  # --- Python analysis stack (imported by tools/*.py) ---
+  - pandas
+  - numpy
+  - scipy
+  - statsmodels
+  - matplotlib
+  - seaborn
+  - pyranges          # agg_gene.py / agg_promoter.py
+  - adjusttext        # viz.py labels
+  - gseapy            # pathway_enrichment.py
+  - natsort
+  - tabulate
+  # --- External tools the methylation pipeline shells out to ---
+  - bedtools          # execute_union_bedgraph.sh (also fix its hardcoded path)
+  - cxx-compiler      # g++ to build tools/cpg_level_ttest from .cpp
+  # --- R stack for tools/make_heatmap.R ---
+  - r-base
+  - r-optparse
+  - r-data.table
+  - r-dplyr
+  - r-logger
+  - r-circlize
+  - bioconductor-complexheatmap

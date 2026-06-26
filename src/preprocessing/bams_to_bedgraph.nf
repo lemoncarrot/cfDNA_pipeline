@@ -1,15 +1,41 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
 
-params.parent_dir = "/path/to/parent_dir"
-params.unsorted_bam_dir = "/path"
-params.ref = "/path/to/ref"
+// ---------------------------------------------------------------------------
+// Inputs. Only --unsorted_bam_dir and --ref must be supplied; everything else
+// is derived from them or auto-resolved relative to this pipeline file.
+//
+//   nextflow run bams_to_bedgraph.nf -profile conda \
+//       --unsorted_bam_dir <parent>/A00_Samples/00_unsorted_bam \
+//       --ref /path/to/reference.fasta
+// ---------------------------------------------------------------------------
 
-params.samtools = "/mnt/ix1/Resources/tools/samtools/v1.19.2/bin/samtools"
-params.modkit = "/mnt/ix1/Resources/tools/modkit/v0.6.1/modkit"
+// Folder containing the input *.bam files (required).
+params.unsorted_bam_dir = null
+// Reference genome FASTA the BAMs were aligned to (required by modkit pileup).
+params.ref              = null
+// Root for numbered output folders (01_sorted_bam, 02_flagstat, ...).
+// Defaults to the parent of the input BAM folder.
+params.parent_dir       = params.unsorted_bam_dir ? file(params.unsorted_bam_dir).parent.toString() : null
+// Where QC plots are published. Defaults to <parent_dir>/qc.
+params.qc_out_dir       = params.parent_dir ? "${params.parent_dir}/qc" : null
+// Analysis scripts shipped in the repo. Auto-resolved relative to this .nf:
+// src/preprocessing/ -> ../../tools. Override only if running tools elsewhere.
+params.tools_path       = "${projectDir}/../../tools"
+
+if( !params.unsorted_bam_dir )
+    error "Missing --unsorted_bam_dir: folder containing the input *.bam files"
+if( !params.ref )
+    error "Missing --ref: reference genome FASTA the BAMs were aligned to"
+
+def qc_script = file("${params.tools_path}/alignment_metrics.py")
+if( !qc_script.exists() )
+    error "Could not resolve QC script at ${qc_script}. Pass --tools_path <repo>/tools"
 
 process SORT_INDEX {
     tag "${sample_id}"
+
+    conda 'bioconda::samtools=1.19.2'
 
     publishDir "${params.parent_dir}/01_sorted_bam", mode: 'copy'
 
@@ -21,7 +47,7 @@ process SORT_INDEX {
 
     script:
     """
-    ${params.samtools} sort \
+    samtools sort \
         --write-index \
         "$unsorted_bam" \
         -o ${sample_id}_sorted.bam
@@ -30,6 +56,8 @@ process SORT_INDEX {
 
 process RUN_FLAGSTAT {
     tag "${sample_id}"
+
+    conda 'bioconda::samtools=1.19.2'
 
     publishDir "${params.parent_dir}/02_flagstat", mode: 'copy'
 
@@ -41,12 +69,14 @@ process RUN_FLAGSTAT {
 
     script:
     """
-    ${params.samtools} flagstat "${sorted_bam}" > ${sample_id}_flagstat.txt
+    samtools flagstat "${sorted_bam}" > ${sample_id}_flagstat.txt
     """
 }
 
 process MAKE_BEDS {
     tag "${sample_id}"
+
+    conda 'bioconda::modkit=0.6.1'
 
     publishDir "${params.parent_dir}/03_bedmethyl", mode: 'copy', pattern: "*.bed"
     publishDir "${params.parent_dir}/03_bedmethyl/logs", mode: 'copy', pattern: "*.log"
@@ -60,7 +90,7 @@ process MAKE_BEDS {
 
     script:
     """
-    ${params.modkit} pileup \
+    modkit pileup \
         "${sorted_bam}" \
         "${sample_id}.5mC5hmC.bed" \
         --cpg \
@@ -99,6 +129,36 @@ process MAKE_BEDGRAPHS {
     """
 }
 
+process RUN_QC {
+    tag "qc"
+
+    conda 'conda-forge::pandas conda-forge::numpy conda-forge::matplotlib bioconda::samtools=1.19.2'
+
+    publishDir "${params.qc_out_dir}", mode: 'copy', pattern: "*.png"
+
+    input:
+    path qc_script
+    path "5mCG_bedgraph/*"
+    path "5hmCG_bedgraph/*"
+
+    output:
+    path "*.png", emit: qc_plots
+
+    script:
+    // bedgraphs are staged into per-modification subdirs so the script's
+    // suffix-based directory listing stays clean; flagstat/sorted-bam paths
+    // feed the optional alignment-metrics section and point at publishDir.
+    // PNGs are written to the task dir and copied out by publishDir.
+    """
+    python ${qc_script} \
+        --flagstat-folder-path ${params.parent_dir}/02_flagstat \
+        --sorted-bam-path ${params.parent_dir}/01_sorted_bam \
+        --bedgraph-path 5mCG_bedgraph \
+        --h-bedgraph-path 5hmCG_bedgraph \
+        --output-dir .
+    """
+}
+
 workflow {
     bam_ch = Channel
         .fromPath("${params.unsorted_bam_dir}/*.bam", glob: true)
@@ -108,4 +168,11 @@ workflow {
     RUN_FLAGSTAT(SORT_INDEX.out.sorted_bam)
     MAKE_BEDS(SORT_INDEX.out.sorted_bam)
     MAKE_BEDGRAPHS(MAKE_BEDS.out.bed)
+
+    // gate QC on all samples' bedgraphs so it runs once at the end
+    RUN_QC(
+        qc_script,
+        MAKE_BEDGRAPHS.out.mC_bedgraph.map { it[1] }.collect(),
+        MAKE_BEDGRAPHS.out.hmC_bedgraph.map { it[1] }.collect()
+    )
 }
