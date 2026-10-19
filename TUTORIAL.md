@@ -63,16 +63,4 @@ nextflow run src/methylation_analysis/full_analysis.nf -profile conda \
 
 Results publish under `PARENT_RESULTS_DIR/` (`a01_diff_cpg_5hmCG/`, `a02_diff_cpg_5mCG/`).
 
-### Paths and tools to resolve before this is runnable
-
-The processes now run in the repo `cfdna` env (`conda 'cfdna'`, via `-profile conda`). Still to resolve:
-
-- **Hardcoded param paths** (top of the `.nf`): `DATA_DIR`, `PARENT_RESULTS_DIR`, `REFS_DIR`, `TOOLS_DIR`, `LOG_DIR` are absolute `/mnt/ix1/...` paths. Pass the first three on the command line; auto-resolve `TOOLS_DIR` to `${projectDir}/../../tools` (as step 1 does); `LOG_DIR` is unused and can be dropped.
-- **Compiled C++ binary**: `tools/cpg_level_ttest` must be built before running: `g++ -Ofast -std=c++1z -o tools/cpg_level_ttest tools/cpg_level_ttest.cpp`.
-- **External tools missing from `tools/cfdna.yml`**: `bedtools` (union step), `Rscript` + R (heatmaps), and `g++` (compiling the binary above) currently resolve only from the host PATH. Add them to the env spec for a self-contained run.
-
-> Known bug in the current `.nf`: line ~89 uses `${params.TOOLS_DIR}make_heatmap.R` (missing `/`), which breaks `a01`'s heatmap step.
-
 ## 3. Fragmentomics analysis
-
-note: need to resolve conda for all steps in the pipeline 
